@@ -19,12 +19,12 @@ async def cmd_ask(message: Message):
     if len(parts) < 2 or not parts[1].strip():
         await message.reply("Вопрос где?")
         return
-    question = parts[1].strip()
+    extra = await db.get_instructions(message.chat.id)
     try:
-        answer = await ai.ask(question)
+        answer = await ai.ask(parts[1].strip(), extra=extra)
     except Exception as e:
         logger.error("ask error: %s", e)
-        await message.reply("Сломалось. Попробуй позже.")
+        await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(answer)
 
@@ -40,8 +40,9 @@ async def cmd_rating(message: Message):
         await message.reply("Нет сообщений для анализа.")
         return
     ai.set_cooldown(message.chat.id)
+    extra = await db.get_instructions(message.chat.id)
     try:
-        result = await ai.rating(msgs)
+        result = await ai.rating(msgs, extra=extra)
     except Exception as e:
         logger.error("rating error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
@@ -60,8 +61,9 @@ async def cmd_summary(message: Message):
         await message.reply("Нет сообщений для саммари.")
         return
     ai.set_cooldown(message.chat.id)
+    extra = await db.get_instructions(message.chat.id)
     try:
-        result = await ai.summary(msgs)
+        result = await ai.summary(msgs, extra=extra)
     except Exception as e:
         logger.error("summary error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
@@ -80,13 +82,37 @@ async def cmd_future(message: Message):
         await message.reply("Нет сообщений для предсказания.")
         return
     ai.set_cooldown(message.chat.id)
+    extra = await db.get_instructions(message.chat.id)
     try:
-        result = await ai.future(msgs)
+        result = await ai.future(msgs, extra=extra)
     except Exception as e:
         logger.error("future error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(result, parse_mode="Markdown")
+
+
+@router.message(Command("instructions"))
+async def cmd_instructions(message: Message):
+    if not message.text:
+        return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        current = await db.get_instructions(message.chat.id)
+        if current:
+            await message.reply(f"Текущие инструкции:\n\n{current}")
+        else:
+            await message.reply("Кастомных инструкций нет.")
+        return
+    instructions = parts[1].strip()
+    await db.set_instructions(message.chat.id, instructions)
+    await message.reply("Инструкции сохранены.")
+
+
+@router.message(Command("clearinstructions"))
+async def cmd_clearinstructions(message: Message):
+    await db.clear_instructions(message.chat.id)
+    await message.reply("Инструкции очищены.")
 
 
 @router.message()

@@ -4,7 +4,6 @@ import os
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 import db
 from handlers import router
@@ -13,37 +12,35 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBHOOK_URL = os.environ["WEBHOOK_URL"]          # e.g. https://your-app.onrender.com
-WEBHOOK_PATH = "/webhook"
-HOST = "0.0.0.0"
 PORT = int(os.getenv("PORT", 10000))
 
 
-async def on_startup(bot: Bot):
-    await db.init_db()
-    await bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
-    logger.info("Webhook set to %s%s", WEBHOOK_URL, WEBHOOK_PATH)
+async def health(request):
+    return web.Response(text="ok")
 
 
-async def on_shutdown(bot: Bot):
-    await bot.delete_webhook()
-
-
-def main():
+async def run_bot():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     dp.include_router(router)
+    await db.init_db()
+    logger.info("Starting polling...")
+    await dp.start_polling(bot, allowed_updates=["message"])
 
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
 
+async def run_web():
     app = web.Application()
-    handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    handler.register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    logger.info("Health server on port %d", PORT)
 
-    web.run_app(app, host=HOST, port=PORT)
+
+async def main():
+    await asyncio.gather(run_web(), run_bot())
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

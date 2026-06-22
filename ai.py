@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 API_URL = "https://api.vsegpt.ru/v1/chat/completions"
 
 MODELS = [
-    "openai/gpt-4o",
+    "openai/gpt-3.5-turbo",
     "openai/gpt-4o-mini",
     "anthropic/claude-haiku",
 ]

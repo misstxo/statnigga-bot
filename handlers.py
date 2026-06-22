@@ -20,8 +20,9 @@ async def cmd_ask(message: Message):
         await message.reply("Вопрос где?")
         return
     extra = await db.get_instructions(message.chat.id)
+    history = await db.get_last_messages(message.chat.id, 30)
     try:
-        answer = await ai.ask(parts[1].strip(), extra=extra)
+        answer = await ai.ask(parts[1].strip(), extra=extra, history=history)
     except Exception as e:
         logger.error("ask error: %s", e)
         await message.reply("Перегружен, попробуй позже.")

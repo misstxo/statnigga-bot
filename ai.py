@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 API_URL = "https://api.vsegpt.ru/v1/chat/completions"
 
 MODELS = [
-    "openai/gpt-3.5-turbo",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
     "anthropic/claude-haiku",
-    "meta-llama/llama-3.1-8b-instruct",
 ]
 
 SYSTEM_PROMPT = """Ты — бот в русскоязычном групповом чате. Ты не ассистент, ты просто участник беседы.
@@ -106,11 +106,16 @@ def _format_history(msgs: list[dict]) -> str:
     return "\n".join(f"[{m['username']}]: {m['text']}" for m in msgs)
 
 
-async def ask(question: str, extra: str | None = None) -> str:
+async def ask(question: str, extra: str | None = None, history: list[dict] | None = None) -> str:
     system = _build_system(extra) + "\n\nОтвечай прямо, без вступлений и предисловий. Только суть."
+    if history:
+        history_text = _format_history(history)
+        user_content = f"Последние сообщения чата:\n{history_text}\n\nВопрос: {question}"
+    else:
+        user_content = question
     return await _chat([
         {"role": "system", "content": system},
-        {"role": "user", "content": question},
+        {"role": "user", "content": user_content},
     ])
 
 

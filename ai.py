@@ -6,20 +6,18 @@ import os
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+API_URL = "https://api.vsegpt.ru/v1/chat/completions"
 
 MODELS = [
-    "google/gemma-4-31b-it:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
+    "openai/gpt-3.5-turbo",
+    "anthropic/claude-haiku",
+    "meta-llama/llama-3.1-8b-instruct",
 ]
 
 def _headers() -> dict:
     return {
-        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
+        "Authorization": f"Bearer {os.getenv('VSEGPT_API_KEY', '')}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/statnigga-bot",
-        "X-Title": "StatNigga Bot",
     }
 
 # Rate limiter: 15 requests per minute
@@ -82,7 +80,7 @@ async def _chat(messages: list[dict], max_tokens: int = 1024) -> str:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    OPENROUTER_URL, json=payload, headers=_headers()
+                    API_URL, json=payload, headers=_headers()
                 ) as resp:
                     if resp.status not in (200, 201):
                         body = await resp.text()

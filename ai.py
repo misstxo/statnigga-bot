@@ -3,7 +3,7 @@ import os
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+MODEL = "google/gemma-4-31b-it:free"
 
 HEADERS = {
     "Authorization": f"Bearer {OPENROUTER_API_KEY}",

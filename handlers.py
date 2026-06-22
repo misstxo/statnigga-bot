@@ -11,19 +11,6 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-@router.message()
-async def store_message(message: Message):
-    if not message.text:
-        return
-    username = message.from_user.username or message.from_user.full_name or str(message.from_user.id)
-    await db.save_message(
-        chat_id=message.chat.id,
-        user_id=message.from_user.id,
-        username=username,
-        text=message.text,
-    )
-
-
 @router.message(Command("ask"))
 async def cmd_ask(message: Message):
     parts = message.text.split(maxsplit=1)
@@ -83,3 +70,16 @@ async def cmd_future(message: Message):
         await message.reply("Будущее закрыто.")
         return
     await message.reply(result, parse_mode="Markdown")
+
+
+@router.message()
+async def store_message(message: Message):
+    if not message.text:
+        return
+    username = message.from_user.username or message.from_user.full_name or str(message.from_user.id)
+    await db.save_message(
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        username=username,
+        text=message.text,
+    )

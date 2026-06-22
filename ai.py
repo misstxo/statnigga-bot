@@ -7,9 +7,9 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
     "google/gemma-4-31b-it:free",
-    "nous-hermes/hermes-3-405b:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
 ]
 
 HEADERS = {

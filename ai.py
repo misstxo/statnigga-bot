@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import time
 import aiohttp
 import os
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -81,10 +84,11 @@ async def _chat(messages: list[dict], max_tokens: int = 1024) -> str:
                 async with session.post(
                     OPENROUTER_URL, json=payload, headers=_headers()
                 ) as resp:
-                    if resp.status == 429:
-                        last_error = f"429 from {model}"
+                    if resp.status not in (200, 201):
+                        body = await resp.text()
+                        last_error = f"{resp.status} from {model}: {body[:300]}"
+                        logger.error("openrouter error [%s]: %s | body: %s", model, resp.status, body[:300])
                         continue
-                    resp.raise_for_status()
                     data = await resp.json()
                     text = data["choices"][0]["message"]["content"]
                     if text is None:

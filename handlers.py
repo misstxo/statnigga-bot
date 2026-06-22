@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 @router.message(Command("ask"))
 async def cmd_ask(message: Message):
+    if not message.text:
+        return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
         await message.reply("Вопрос где?")

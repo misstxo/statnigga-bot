@@ -3,7 +3,6 @@ import time
 import aiohttp
 import os
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODELS = [
@@ -12,12 +11,13 @@ MODELS = [
     "mistralai/mistral-7b-instruct:free",
 ]
 
-HEADERS = {
-    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-    "Content-Type": "application/json",
-    "HTTP-Referer": "https://github.com/statnigga-bot",
-    "X-Title": "StatNigga Bot",
-}
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/statnigga-bot",
+        "X-Title": "StatNigga Bot",
+    }
 
 # Rate limiter: 15 requests per minute
 _rate_lock = asyncio.Lock()
@@ -79,7 +79,7 @@ async def _chat(messages: list[dict], max_tokens: int = 1024) -> str:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    OPENROUTER_URL, json=payload, headers=HEADERS
+                    OPENROUTER_URL, json=payload, headers=_headers()
                 ) as resp:
                     if resp.status == 429:
                         last_error = f"429 from {model}"

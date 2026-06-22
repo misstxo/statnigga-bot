@@ -31,45 +31,60 @@ async def cmd_ask(message: Message):
 
 @router.message(Command("rating"))
 async def cmd_rating(message: Message):
+    remaining = ai.check_cooldown(message.chat.id)
+    if remaining:
+        await message.reply(f"Подожди ещё {remaining:.0f} сек.")
+        return
     msgs = await db.get_last_messages(message.chat.id, 100)
     if not msgs:
         await message.reply("Нет сообщений для анализа.")
         return
+    ai.set_cooldown(message.chat.id)
     try:
         result = await ai.rating(msgs)
     except Exception as e:
         logger.error("rating error: %s", e)
-        await message.reply("Не смог построить рейтинг.")
+        await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(result, parse_mode="Markdown")
 
 
 @router.message(Command("summary"))
 async def cmd_summary(message: Message):
+    remaining = ai.check_cooldown(message.chat.id)
+    if remaining:
+        await message.reply(f"Подожди ещё {remaining:.0f} сек.")
+        return
     msgs = await db.get_last_messages(message.chat.id, 100)
     if not msgs:
         await message.reply("Нет сообщений для саммари.")
         return
+    ai.set_cooldown(message.chat.id)
     try:
         result = await ai.summary(msgs)
     except Exception as e:
         logger.error("summary error: %s", e)
-        await message.reply("Не смог сделать саммари.")
+        await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(result, parse_mode="Markdown")
 
 
 @router.message(Command("future"))
 async def cmd_future(message: Message):
+    remaining = ai.check_cooldown(message.chat.id)
+    if remaining:
+        await message.reply(f"Подожди ещё {remaining:.0f} сек.")
+        return
     msgs = await db.get_last_messages(message.chat.id, 100)
     if not msgs:
         await message.reply("Нет сообщений для предсказания.")
         return
+    ai.set_cooldown(message.chat.id)
     try:
         result = await ai.future(msgs)
     except Exception as e:
         logger.error("future error: %s", e)
-        await message.reply("Будущее закрыто.")
+        await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(result, parse_mode="Markdown")
 

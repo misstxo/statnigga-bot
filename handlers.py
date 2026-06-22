@@ -27,7 +27,7 @@ async def cmd_ask(message: Message):
         logger.error("ask error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
-    await message.reply(answer)
+    await message.reply(answer, parse_mode="HTML")
 
 
 @router.message(Command("rating"))
@@ -48,7 +48,7 @@ async def cmd_rating(message: Message):
         logger.error("rating error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
-    await message.reply(result, parse_mode="Markdown")
+    await message.reply(result, parse_mode="HTML")
 
 
 @router.message(Command("summary"))
@@ -69,7 +69,7 @@ async def cmd_summary(message: Message):
         logger.error("summary error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
-    await message.reply(result, parse_mode="Markdown")
+    await message.reply(result, parse_mode="HTML")
 
 
 @router.message(Command("future"))
@@ -90,7 +90,7 @@ async def cmd_future(message: Message):
         logger.error("future error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
-    await message.reply(result, parse_mode="Markdown")
+    await message.reply(result, parse_mode="HTML")
 
 
 @router.message(Command("instructions"))

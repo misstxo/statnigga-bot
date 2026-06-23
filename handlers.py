@@ -1,6 +1,7 @@
+import json
 import logging
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -88,6 +89,59 @@ async def cmd_future(message: Message):
         result = await ai.future(msgs, extra=extra)
     except Exception as e:
         logger.error("future error: %s", e)
+        await message.reply("Перегружен, попробуй позже.")
+        return
+    await message.reply(result, parse_mode="HTML")
+
+
+@router.message(Command("poll"))
+async def cmd_poll(message: Message, bot: Bot):
+    remaining = ai.check_cooldown(message.chat.id)
+    if remaining:
+        await message.reply(f"Подожди ещё {remaining:.0f} сек.")
+        return
+    msgs = await db.get_last_messages(message.chat.id, 30)
+    if not msgs:
+        await message.reply("Нет сообщений для опроса.")
+        return
+    ai.set_cooldown(message.chat.id)
+    extra = await db.get_instructions(message.chat.id)
+    try:
+        data = await ai.poll(msgs, extra=extra)
+        question = data["question"]
+        options = data["options"]
+    except json.JSONDecodeError as e:
+        logger.error("poll json error: %s", e)
+        await message.reply("Не смог придумать опрос, попробуй позже.")
+        return
+    except Exception as e:
+        logger.error("poll error: %s", e)
+        await message.reply("Перегружен, попробуй позже.")
+        return
+    await bot.send_poll(
+        chat_id=message.chat.id,
+        question=question[:300],
+        options=[o[:100] for o in options[:10]],
+        is_anonymous=True,
+    )
+
+
+@router.message(Command("psycho"))
+async def cmd_psycho(message: Message):
+    remaining = ai.check_cooldown(message.chat.id)
+    if remaining:
+        await message.reply(f"Подожди ещё {remaining:.0f} сек.")
+        return
+    msgs = await db.get_last_messages(message.chat.id, 100)
+    if not msgs:
+        await message.reply("Нет сообщений для анализа.")
+        return
+    ai.set_cooldown(message.chat.id)
+    extra = await db.get_instructions(message.chat.id)
+    try:
+        result = await ai.psycho(msgs, extra=extra)
+    except Exception as e:
+        logger.error("psycho error: %s", e)
         await message.reply("Перегружен, попробуй позже.")
         return
     await message.reply(result, parse_mode="HTML")

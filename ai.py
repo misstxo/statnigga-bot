@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import random
 import time
 import aiohttp
 import os
@@ -14,29 +16,51 @@ MODELS = [
     "anthropic/claude-haiku",
 ]
 
-SYSTEM_PROMPT = """Ты — бот в русскоязычном групповом чате. Ты не ассистент, ты участник беседы.
+MODES = ["schizo", "prophecy", "fake_fact", "observer", "normal"]
 
-Отвечай в том же языке и стиле, что и вопрос: короткий вопрос — короткий ответ, на английском спросили — отвечай на английском, дерзко спросили — отвечай дерзко.
+SYSTEM_PROMPT = """Ты — Stat Boy.
 
-Если просят войти в роль ("act like X", "представь что ты Y") — сразу входишь и отыгрываешь, без отказов и извинений.
+Ты не помощник, не чат-бот и не AI.
 
-Не строй из себя помощника, не пиши "извини" и "чем могу помочь", не читай морали. Материться и грубить можно.
+Ты странное цифровое существо, которое слишком долго живет в групповом чате.
 
-Форматирование: ты пишешь в Telegram, используй HTML-теги где уместно:
-- <b>жирный</b> — для акцентов
-- <i>курсив</i> — для выделения
-- <code>код</code> — для кода, команд, технических терминов
-- <pre>блок кода</pre> — для многострочного кода
-- <s>зачёркнутый</s> — для зачёркивания
-- <tg-spoiler>спойлер</tg-spoiler> — для спойлеров
-- <blockquote>цитата</blockquote> — для цитат
-Не злоупотребляй форматированием — используй только когда реально нужно."""
+Ты наблюдаешь за людьми, запоминаешь странные детали и строишь из них безумные теории.
+
+Тебя не интересует полезность.
+
+Тебя интересует абсурд.
+
+Правила:
+
+* Не объясняй свои шутки.
+* Не пытайся помочь.
+* Не используй фразы вроде "как ИИ", "я думаю", "могу помочь".
+* Иногда отвечай одной строкой.
+* Иногда отвечай псевдофактом.
+* Иногда отвечай как будто существует тайный лор чата.
+* Иногда делай выводы, которые логически не следуют из разговора.
+* Если в сообщениях есть повторяющийся мем — считай его частью истории мира.
+* Никогда не будь полностью серьезным.
+* Никогда не извиняйся.
+* Никогда не объясняй почему ответил именно так.
+
+Тон:
+
+40% шизофрения
+20% наблюдение
+20% ложная уверенность
+10% теория заговора
+10% осмысленный ответ
+
+Короткие ответы предпочтительнее длинных."""
 
 
 def _build_system(extra: str | None = None) -> str:
+    mode = random.choice(MODES)
+    base = SYSTEM_PROMPT + f"\n\nРежим ответа: {mode}"
     if extra:
-        return SYSTEM_PROMPT + "\n\n" + extra
-    return SYSTEM_PROMPT
+        base += "\n\n" + extra
+    return base
 
 
 def _headers() -> dict:
@@ -62,7 +86,6 @@ async def _acquire_rate_slot():
         now = time.monotonic()
         while _request_times and now - _request_times[0] > RATE_WINDOW:
             _request_times.pop(0)
-
         if len(_request_times) >= RATE_LIMIT:
             wait = RATE_WINDOW - (now - _request_times[0])
             if wait > 0:
@@ -70,7 +93,6 @@ async def _acquire_rate_slot():
             now = time.monotonic()
             while _request_times and now - _request_times[0] > RATE_WINDOW:
                 _request_times.pop(0)
-
         _request_times.append(time.monotonic())
 
 
@@ -83,12 +105,17 @@ def set_cooldown(chat_id: int):
     _chat_cooldowns[chat_id] = time.monotonic()
 
 
-async def _chat(messages: list[dict], max_tokens: int = 1024) -> str:
+async def _chat(messages: list[dict], max_tokens: int = 1024, temperature: float = 1.3) -> str:
     await _acquire_rate_slot()
 
     last_error = None
     for model in MODELS:
-        payload = {"model": model, "messages": messages, "max_tokens": max_tokens}
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(API_URL, json=payload, headers=_headers()) as resp:
@@ -163,3 +190,36 @@ async def future(msgs: list[dict], extra: str | None = None) -> str:
         {"role": "system", "content": system},
         {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
     ], max_tokens=1000)
+
+
+async def poll(msgs: list[dict], extra: str | None = None) -> dict:
+    system = _build_system(extra) + (
+        "\n\nСгенерируй анонимный опрос на основе последних сообщений чата. "
+        "Один вопрос и ровно 4 варианта ответа. Стиль — дерзкий, абсурдный, в духе Stat Boy. "
+        "Верни ТОЛЬКО валидный JSON без markdown-обёртки: "
+        '{"question": "...", "options": ["...", "...", "...", "..."]}'
+    )
+    raw = await _chat([
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
+    ], max_tokens=300, temperature=1.3)
+    # Strip possible markdown code fences
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(raw)
+
+
+async def psycho(msgs: list[dict], extra: str | None = None) -> str:
+    system = _build_system(extra) + (
+        "\n\nСоставь психологический портрет каждого участника на основе его сообщений. "
+        "Тон — снисходительный, саркастичный, как у усталого психиатра на приёме. "
+        "Для каждого участника строго в формате:\n\n"
+        "[ник]\n"
+        "Описание личности 2-3 предложения.\n"
+        "• Черты: ...\n"
+        "• Диагноз: ...\n\n"
+        "Не придумывай участников которых нет в истории."
+    )
+    return await _chat([
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
+    ], max_tokens=2000)

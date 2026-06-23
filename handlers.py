@@ -4,8 +4,6 @@ import logging
 from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from google.api_core.exceptions import ResourceExhausted
-
 import ai
 import db
 
@@ -31,9 +29,6 @@ async def cmd_ask(message: Message):
     history = await db.get_last_messages(message.chat.id, 30)
     try:
         answer = await ai.ask(parts[1].strip(), extra=extra, history=history)
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD)
-        return
     except Exception as e:
         _err("ask", e); await message.reply(_OVERLOAD); return
     await message.reply(answer, parse_mode="HTML")
@@ -53,8 +48,6 @@ async def cmd_rating(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.rating(msgs, extra=extra)
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD); return
     except Exception as e:
         _err("rating", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
@@ -74,8 +67,6 @@ async def cmd_summary(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.summary(msgs, extra=extra)
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD); return
     except Exception as e:
         _err("summary", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
@@ -95,8 +86,6 @@ async def cmd_future(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.future(msgs, extra=extra)
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD); return
     except Exception as e:
         _err("future", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
@@ -118,8 +107,6 @@ async def cmd_poll(message: Message, bot: Bot):
         data = await ai.poll(msgs, extra=extra)
         question = data["question"]
         options = data["options"]
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD); return
     except json.JSONDecodeError as e:
         _err("poll json", e); await message.reply("не смог придумать опрос, попробуй позже"); return
     except Exception as e:
@@ -146,8 +133,6 @@ async def cmd_psycho(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.psycho(msgs, extra=extra)
-    except ResourceExhausted:
-        await message.reply(_OVERLOAD); return
     except Exception as e:
         _err("psycho", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")

@@ -4,12 +4,19 @@ import logging
 from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
+from google.api_core.exceptions import ResourceExhausted
 
 import ai
 import db
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+_OVERLOAD = "перегружен, попробуй позже"
+
+
+def _err(cmd: str, e: Exception):
+    logger.error("%s error: %s", cmd, e)
 
 
 @router.message(Command("ask"))
@@ -24,10 +31,11 @@ async def cmd_ask(message: Message):
     history = await db.get_last_messages(message.chat.id, 30)
     try:
         answer = await ai.ask(parts[1].strip(), extra=extra, history=history)
-    except Exception as e:
-        logger.error("ask error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD)
         return
+    except Exception as e:
+        _err("ask", e); await message.reply(_OVERLOAD); return
     await message.reply(answer, parse_mode="HTML")
 
 
@@ -45,10 +53,10 @@ async def cmd_rating(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.rating(msgs, extra=extra)
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD); return
     except Exception as e:
-        logger.error("rating error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
-        return
+        _err("rating", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
 
 
@@ -66,10 +74,10 @@ async def cmd_summary(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.summary(msgs, extra=extra)
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD); return
     except Exception as e:
-        logger.error("summary error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
-        return
+        _err("summary", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
 
 
@@ -87,10 +95,10 @@ async def cmd_future(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.future(msgs, extra=extra)
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD); return
     except Exception as e:
-        logger.error("future error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
-        return
+        _err("future", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
 
 
@@ -110,14 +118,12 @@ async def cmd_poll(message: Message, bot: Bot):
         data = await ai.poll(msgs, extra=extra)
         question = data["question"]
         options = data["options"]
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD); return
     except json.JSONDecodeError as e:
-        logger.error("poll json error: %s", e)
-        await message.reply("Не смог придумать опрос, попробуй позже.")
-        return
+        _err("poll json", e); await message.reply("не смог придумать опрос, попробуй позже"); return
     except Exception as e:
-        logger.error("poll error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
-        return
+        _err("poll", e); await message.reply(_OVERLOAD); return
     await bot.send_poll(
         chat_id=message.chat.id,
         question=question[:300],
@@ -140,10 +146,10 @@ async def cmd_psycho(message: Message):
     extra = await db.get_instructions(message.chat.id)
     try:
         result = await ai.psycho(msgs, extra=extra)
+    except ResourceExhausted:
+        await message.reply(_OVERLOAD); return
     except Exception as e:
-        logger.error("psycho error: %s", e)
-        await message.reply("Перегружен, попробуй позже.")
-        return
+        _err("psycho", e); await message.reply(_OVERLOAD); return
     await message.reply(result, parse_mode="HTML")
 
 
@@ -159,8 +165,7 @@ async def cmd_instructions(message: Message):
         else:
             await message.reply("Кастомных инструкций нет.")
         return
-    instructions = parts[1].strip()
-    await db.set_instructions(message.chat.id, instructions)
+    await db.set_instructions(message.chat.id, parts[1].strip())
     await message.reply("Инструкции сохранены.")
 
 

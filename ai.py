@@ -1,21 +1,16 @@
 import asyncio
 import json
 import logging
-import random
-import time
-import aiohttp
 import os
+import random
+
+import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted, GoogleAPIError
 
 logger = logging.getLogger(__name__)
 
-API_URL = "https://api.vsegpt.ru/v1/chat/completions"
-
-MODELS = [
-    "openai/gpt-3.5-turbo",
-    "openai/gpt-4o-mini",
-    "anthropic/claude-haiku",
-]
-
+MODEL_NAME = "gemini-2.0-flash"
+TEMPERATURE = 1.3
 MODES = ["schizo", "prophecy", "fake_fact", "observer", "normal"]
 
 SYSTEM_PROMPT = """Ты — Stat Boy.
@@ -54,6 +49,25 @@ SYSTEM_PROMPT = """Ты — Stat Boy.
 
 Короткие ответы предпочтительнее длинных."""
 
+# Per-chat cooldowns for heavy commands (seconds)
+_chat_cooldowns: dict[int, float] = {}
+COOLDOWN_SECONDS = 10
+
+# Rate limiter: 15 requests per minute (in-memory sliding window)
+_rate_lock = asyncio.Lock()
+_request_times: list[float] = []
+RATE_LIMIT = 15
+RATE_WINDOW = 60.0
+
+
+def _get_client(system: str) -> genai.GenerativeModel:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    return genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        system_instruction=system,
+        generation_config=genai.types.GenerationConfig(temperature=TEMPERATURE),
+    )
+
 
 def _build_system(extra: str | None = None) -> str:
     mode = random.choice(MODES)
@@ -63,25 +77,13 @@ def _build_system(extra: str | None = None) -> str:
     return base
 
 
-def _headers() -> dict:
-    return {
-        "Authorization": f"Bearer {os.getenv('VSEGPT_API_KEY', '')}",
-        "Content-Type": "application/json",
-    }
+def _format_history(msgs: list[dict]) -> str:
+    return "\n".join(f"[{m['username']}]: {m['text']}" for m in msgs)
 
 
-# Rate limiter: 15 requests per minute
-_rate_lock = asyncio.Lock()
-_request_times: list[float] = []
-RATE_LIMIT = 15
-RATE_WINDOW = 60.0
+async def _generate(system: str, prompt: str, max_tokens: int = 1024) -> str:
+    import time
 
-# Per-chat cooldowns for heavy commands (seconds)
-_chat_cooldowns: dict[int, float] = {}
-COOLDOWN_SECONDS = 10
-
-
-async def _acquire_rate_slot():
     async with _rate_lock:
         now = time.monotonic()
         while _request_times and now - _request_times[0] > RATE_WINDOW:
@@ -95,63 +97,45 @@ async def _acquire_rate_slot():
                 _request_times.pop(0)
         _request_times.append(time.monotonic())
 
+    model = _get_client(system)
+    loop = asyncio.get_event_loop()
+    try:
+        response = await loop.run_in_executor(
+            None,
+            lambda: model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=TEMPERATURE,
+                    max_output_tokens=max_tokens,
+                ),
+            ),
+        )
+        return response.text.strip()
+    except ResourceExhausted:
+        raise
+    except GoogleAPIError as e:
+        raise RuntimeError(str(e)) from e
+
 
 def check_cooldown(chat_id: int) -> float:
+    import time
     last = _chat_cooldowns.get(chat_id, 0.0)
     return max(0.0, COOLDOWN_SECONDS - (time.monotonic() - last))
 
 
 def set_cooldown(chat_id: int):
+    import time
     _chat_cooldowns[chat_id] = time.monotonic()
-
-
-async def _chat(messages: list[dict], max_tokens: int = 1024, temperature: float = 1.3) -> str:
-    await _acquire_rate_slot()
-
-    last_error = None
-    for model in MODELS:
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(API_URL, json=payload, headers=_headers()) as resp:
-                    if resp.status not in (200, 201):
-                        body = await resp.text()
-                        last_error = f"{resp.status} from {model}: {body[:300]}"
-                        logger.error("api error [%s]: %s | %s", model, resp.status, body[:300])
-                        continue
-                    data = await resp.json()
-                    text = data["choices"][0]["message"]["content"]
-                    if text is None:
-                        last_error = f"empty response from {model}"
-                        continue
-                    return text.strip()
-        except Exception as e:
-            last_error = str(e)
-            continue
-
-    raise RuntimeError(f"All models failed. Last error: {last_error}")
-
-
-def _format_history(msgs: list[dict]) -> str:
-    return "\n".join(f"[{m['username']}]: {m['text']}" for m in msgs)
 
 
 async def ask(question: str, extra: str | None = None, history: list[dict] | None = None) -> str:
     system = _build_system(extra) + "\n\nОтвечай прямо, без вступлений и предисловий. Только суть."
     if history:
         history_text = _format_history(history)
-        user_content = f"Последние сообщения чата:\n{history_text}\n\nВопрос: {question}"
+        prompt = f"Последние сообщения чата:\n{history_text}\n\nВопрос: {question}"
     else:
-        user_content = question
-    return await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_content},
-    ])
+        prompt = question
+    return await _generate(system, prompt)
 
 
 async def rating(msgs: list[dict], extra: str | None = None) -> str:
@@ -162,10 +146,7 @@ async def rating(msgs: list[dict], extra: str | None = None) -> str:
         "Cringe: X/10 | Vulgarity: X/10 | Stupidity: X/10 | Adequacy: X/10\n\n"
         "Не придумывай участников которых нет в истории."
     )
-    return await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
-    ], max_tokens=1500)
+    return await _generate(system, f"История чата:\n{_format_history(msgs)}", max_tokens=1500)
 
 
 async def summary(msgs: list[dict], extra: str | None = None) -> str:
@@ -174,10 +155,7 @@ async def summary(msgs: list[dict], extra: str | None = None) -> str:
         "Иронизируй над тупостью происходящего, как будто тебе лень это читать но ты всё равно прокомментировал. "
         "Без воды и выводов."
     )
-    return await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
-    ], max_tokens=1200)
+    return await _generate(system, f"История чата:\n{_format_history(msgs)}", max_tokens=1200)
 
 
 async def future(msgs: list[dict], extra: str | None = None) -> str:
@@ -186,10 +164,7 @@ async def future(msgs: list[dict], extra: str | None = None) -> str:
         "10-15 реплик строго в формате [Имя]: сообщение. "
         "Используй только имена из истории, сохраняй их словарный запас и манеру."
     )
-    return await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
-    ], max_tokens=1000)
+    return await _generate(system, f"История чата:\n{_format_history(msgs)}", max_tokens=1000)
 
 
 async def poll(msgs: list[dict], extra: str | None = None) -> dict:
@@ -199,11 +174,7 @@ async def poll(msgs: list[dict], extra: str | None = None) -> dict:
         "Верни ТОЛЬКО валидный JSON без markdown-обёртки: "
         '{"question": "...", "options": ["...", "...", "...", "..."]}'
     )
-    raw = await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
-    ], max_tokens=300, temperature=1.3)
-    # Strip possible markdown code fences
+    raw = await _generate(system, f"История чата:\n{_format_history(msgs)}", max_tokens=300)
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     return json.loads(raw)
 
@@ -219,7 +190,4 @@ async def psycho(msgs: list[dict], extra: str | None = None) -> str:
         "• Диагноз: ...\n\n"
         "Не придумывай участников которых нет в истории."
     )
-    return await _chat([
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"История чата:\n{_format_history(msgs)}"},
-    ], max_tokens=2000)
+    return await _generate(system, f"История чата:\n{_format_history(msgs)}", max_tokens=2000)
